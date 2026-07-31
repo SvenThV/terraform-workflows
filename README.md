@@ -1,2 +1,2 @@
 # terraform-workflows
-Reusable GitHub Actions workflows for Terraform deployments on Microsoft Azure.
+Centralized reusable GitHub Actions workflows for Terraform CI/CD on Microsoft Azure.
