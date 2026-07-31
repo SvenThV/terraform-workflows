@@ -1,0 +1,127 @@
+name: Reusable Terraform Destroy
+
+on:
+  workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing the Terraform root module
+        required: false
+        type: string
+        default: "."
+
+      terraform_version:
+        description: Terraform version to install
+        required: false
+        type: string
+        default: "1.12.2"
+
+      environment:
+        description: GitHub environment used for deployment protection
+        required: false
+        type: string
+        default: "private-azure"
+
+    secrets:
+      azure_client_id:
+        required: true
+
+      azure_tenant_id:
+        required: true
+
+      azure_subscription_id:
+        required: true
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  terraform-destroy-plan:
+    name: Terraform Destroy Plan
+    runs-on: ubuntu-latest
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.azure_client_id }}
+      ARM_TENANT_ID: ${{ secrets.azure_tenant_id }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.azure_subscription_id }}
+      ARM_USE_OIDC: true
+      TF_IN_AUTOMATION: true
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.azure_client_id }}
+          tenant-id: ${{ secrets.azure_tenant_id }}
+          subscription-id: ${{ secrets.azure_subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Initialize Terraform
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init -input=false
+
+      - name: Create destroy plan
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform plan -destroy -input=false -out=tfplan-destroy
+
+      - name: Show destroy plan
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform show -no-color tfplan-destroy
+
+      - name: Upload destroy plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-destroy-plan
+          path: ${{ inputs.working_directory }}/tfplan-destroy
+          if-no-files-found: error
+          retention-days: 1
+
+  terraform-destroy:
+    name: Terraform Destroy
+    runs-on: ubuntu-latest
+    needs: terraform-destroy-plan
+    environment: ${{ inputs.environment }}
+
+    env:
+      ARM_CLIENT_ID: ${{ secrets.azure_client_id }}
+      ARM_TENANT_ID: ${{ secrets.azure_tenant_id }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.azure_subscription_id }}
+      ARM_USE_OIDC: true
+      TF_IN_AUTOMATION: true
+
+    steps:
+      - name: Checkout caller repository
+        uses: actions/checkout@v4
+
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.azure_client_id }}
+          tenant-id: ${{ secrets.azure_tenant_id }}
+          subscription-id: ${{ secrets.azure_subscription_id }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Initialize Terraform
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init -input=false
+
+      - name: Download destroy plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-destroy-plan
+          path: ${{ inputs.working_directory }}
+
+      - name: Apply approved destroy plan
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform apply -input=false tfplan-destroy
