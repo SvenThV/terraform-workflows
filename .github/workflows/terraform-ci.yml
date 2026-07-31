@@ -1,4 +1,42 @@
-name: Terraform CI
+name: Reusable Terraform CI
 
 on:
   workflow_call:
+    inputs:
+      working_directory:
+        description: Directory containing the Terraform root module
+        required: false
+        type: string
+        default: "."
+
+      terraform_version:
+        description: Terraform version to install
+        required: false
+        type: string
+        default: "1.12.2"
+
+jobs:
+  terraform-ci:
+    name: Terraform CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ inputs.terraform_version }}
+
+      - name: Check Terraform formatting
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform fmt -check -recursive
+
+      - name: Initialize Terraform
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform init -backend=false
+
+      - name: Validate Terraform
+        working-directory: ${{ inputs.working_directory }}
+        run: terraform validate
